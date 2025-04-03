@@ -2,9 +2,11 @@
 
 #include "parsta.h"
 
-char * cmdnames[] = { "add", "sub", "mul", "div", "remainder", "equals"};
+//char * cmdnames[] = { "add", "sub", "mul", "div", "remainder", "equals"};
+char * cmdnames[] = { "add", "sub", "and", "orr", "eor", "not", "mul", "udiv", "remainder", "equals", "lt", "gt", "lte", "gte", "lnot", "land", "lor", "_dollar"};
 char * regnames[] = { "x8", "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"} ; // NOTE: first reg in this list is for function pointer (if needed)
-char * retnames[] = { "x9", "x10", "x11", "x12", "x13", "x14", "x15" } ; // return value appears in x0
+//char * retnames[] = { "x9", "x10", "x11", "x12", "x13", "x14", "x15" } ; // these are all caller saved and at our disposal on aarch64; but retnames must be callee saved
+char * retnames[] = { "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26" } ; // these are callee saved, so we use these for stashing return values
 
 int num_regnames = sizeof(regnames) / sizeof(char *);
 int num_retnames = sizeof(retnames) / sizeof(char *);
@@ -13,21 +15,22 @@ void emit_start(FILE * out) {
     // Improvement suggestions:
     // 1) only emit asm utility functions that are actually referenced (e.g. at end instead of start)
     // 2) clang: define built-in-support functions without underscore, so as not to interfere with C primitives
+    for (int i=0; i<5;i++) {
+        fprintf(out, ".align 4\n");
+        fprintf(out, "%s:\n", cmdnames[i]);
+        fprintf(out, "    %s x0, %s, %s      /* direct %s into return reg     */\n", cmdnames[i], regnames[1], regnames[2], cmdnames[i]);
+        fprintf(out, "    ret\n");
+    }
     fprintf(out, ".align 4\n");
-    fprintf(out, "add:\n");
-    fprintf(out, "    add x0, %s, %s      /* direct add into return reg     */\n", regnames[1], regnames[2]);
+    fprintf(out, "not:\n");
+    fprintf(out, "    mvn %s, %s        /* direct not                      */\n", regnames[1], regnames[1]);
     fprintf(out, "    ret\n");
-    fprintf(out, ".align 4\n");
-    fprintf(out, "sub:\n");
-    fprintf(out, "    sub x0, %s, %s      /* direct add into return reg     */\n", regnames[1], regnames[2]);
-    fprintf(out, "    ret\n");
-    fprintf(out, ".align 4\n");
     fprintf(out, "mul:\n");
     fprintf(out, "    mul x0, %s, %s      /* direct mul into return reg     */\n", regnames[1], regnames[2]);
     fprintf(out, "    ret\n");
     fprintf(out, ".align 4\n");
-    fprintf(out, "div:\n");
-    fprintf(out, "    div x0, %s, %s      /* direct mul into return reg     */\n", regnames[1], regnames[2]);
+    fprintf(out, "udiv:\n");
+    fprintf(out, "    udiv x0, %s, %s      /* direct udiv into return reg     */\n", regnames[1], regnames[2]);
     fprintf(out, "    ret\n");
     fprintf(out, ".align 4\n");
     fprintf(out, "remainder:             /* e.g. 13 %% 4 (no arm native %%)  */\n");
@@ -36,21 +39,97 @@ void emit_start(FILE * out) {
     fprintf(out, "    ret\n");
     fprintf(out, ".align 4\n");
     fprintf(out, "equals:\n");
-    fprintf(out, "    ret\n"); // TODO
+    fprintf(out, "    cmp %s, %s\n", regnames[1], regnames[2]);
+    fprintf(out, "    mov %s, #0    /* assume false */\n", regnames[1]);
+    fprintf(out, "    bne 0f\n");
+    fprintf(out, "    mov %s, #1\n", regnames[1]);
+    fprintf(out, "0:\n");
+    fprintf(out, "    ret\n");
     fprintf(out, ".align 4\n");
-    fprintf(out, "not:\n");
-    fprintf(out, "    cmp $0, %s\n", regnames[1]);
-    fprintf(out, "    je 0f\n");
-    fprintf(out, "    mov $0, %s\n", regnames[0]);
+    fprintf(out, "lt:\n");
+    fprintf(out, "    cmp %s, %s\n", regnames[1], regnames[2]);
+    fprintf(out, "    mov %s, #0    /* assume false */\n", regnames[1]);
+    fprintf(out, "    bge 0f\n");
+    fprintf(out, "    mov %s, #1\n", regnames[1]);
+    fprintf(out, "0:\n");
+    fprintf(out, "    ret\n");
+    fprintf(out, ".align 4\n");
+    fprintf(out, "gt:\n");
+    fprintf(out, "    cmp %s, %s\n", regnames[1], regnames[2]);
+    fprintf(out, "    mov %s, #0    /* assume false */\n", regnames[1]);
+    fprintf(out, "    bls 0f\n");
+    fprintf(out, "    mov %s, #1\n", regnames[1]);
+    fprintf(out, "0:\n");
+    fprintf(out, "    ret\n");
+    fprintf(out, "lte:\n");
+    fprintf(out, "    cmp %s, %s\n", regnames[1], regnames[2]);
+    fprintf(out, "    mov %s, #0    /* assume false */\n", regnames[1]);
+    fprintf(out, "    bgt 0f\n");
+    fprintf(out, "    mov %s, #1\n", regnames[1]);
+    fprintf(out, "0:\n");
+    fprintf(out, "    ret\n");
+    fprintf(out, ".align 4\n");
+    fprintf(out, "gte:\n");
+    fprintf(out, "    cmp %s, %s\n", regnames[1], regnames[2]);
+    fprintf(out, "    mov %s, #0    /* assume false */\n", regnames[1]);
+    fprintf(out, "    blt 0f\n");
+    fprintf(out, "    mov %s, #1\n", regnames[1]);
+    fprintf(out, "0:\n");
+    fprintf(out, "    ret\n");
+    fprintf(out, ".align 4\n");
+    fprintf(out, "lnot:\n");
+    fprintf(out, "    cmp %s, #0\n", regnames[1]);
+    fprintf(out, "    mov %s, #0    /* assume false */\n", regnames[1]);
+    fprintf(out, "    bne 0f\n");
+    fprintf(out, "    mov %s, #1\n", regnames[1]);
+    fprintf(out, "0:\n");
+    fprintf(out, "    ret\n");
+    fprintf(out, ".align 4\n");
+    fprintf(out, "land:\n");
+    fprintf(out, "    cmp %s, #0\n", regnames[1]);
+    fprintf(out, "    mov %s, #0    /* assume false */ \n", regnames[1]);
+    fprintf(out, "    beq 0f\n");
+    fprintf(out, "    cmp %s, #0\n", regnames[2]);
+    fprintf(out, "    beq 0f\n");
+    fprintf(out, "    mov %s, #1\n", regnames[1]);
+    fprintf(out, "0:\n");
+    fprintf(out, "    ret\n");
+    fprintf(out, ".align 4\n");
+    fprintf(out, "lor:\n");
+    fprintf(out, "    cmp %s, #0\n", regnames[1]);
+    fprintf(out, "    mov %s, #0    /* assume false */ \n", regnames[1]);
+    fprintf(out, "    beq 0f\n");
+    fprintf(out, "    mov %s, #1\n", regnames[1]);
     fprintf(out, "    ret\n");
     fprintf(out, "0:\n");
-    fprintf(out, "    mov $1, %s\n", regnames[0]);
+    fprintf(out, "    cmp %s, #0\n", regnames[2]);
+    fprintf(out, "    beq 0f\n");
+    fprintf(out, "    mov %s, #1\n", regnames[1]);
+    fprintf(out, "0:\n");
     fprintf(out, "    ret\n");
+    fprintf(out, ".align 4\n");
     fprintf(out, "_if:\n");
     fprintf(out, "    cmp %s, #0\n", regnames[1]);
     fprintf(out, "    beq 0f\n");
     fprintf(out, "    br %s           /* let target return to caller    */\n", regnames[2]);
     fprintf(out, "0:\n");
+    fprintf(out, "    cmp %s, #0     /* have else block? */\n", regnames[3]);
+    fprintf(out, "    beq 0f\n");
+    fprintf(out, "    br %s           /* let target return to caller    */\n", regnames[3]);
+    fprintf(out, "0:\n");
+    fprintf(out, "    mov %s, #0      /* return false if no else */\n", regnames[1]);
+    fprintf(out, "    ret\n");
+    fprintf(out, ".align 4\n");
+    fprintf(out, "_loop:\n");
+    fprintf(out, "    stp fp, lr, [sp, #-0x10]!       /* save fp, lr for bl */\n");
+    fprintf(out, "    str %s, [sp, #-16]!         /* save block arg to stack */\n", regnames[1]);
+    fprintf(out, "0:\n");
+    fprintf(out, "    ldr %s, [sp]     /* recall block arg */\n", regnames[0]);
+    fprintf(out, "    blr %s           /* call block    */\n", regnames[0]);
+    fprintf(out, "    cmp %s, #0\n", regnames[1]);
+    fprintf(out, "    bne 0b\n");
+    fprintf(out, "    add sp, sp, #16     /* remove block arg from stack */\n");
+    fprintf(out, "    ldp fp, lr, [sp], #0x10    /* restore fp, lr after bl */\n");
     fprintf(out, "    ret\n");
     fprintf(out, "_funcall:               /* (demo) function ptr support    */\n"); // 'funcal' _is_ a 'C primitive'
     for (int i=1; i<num_regnames; i++) {
@@ -74,9 +153,16 @@ void emit_start(FILE * out) {
     fprintf(out, "    str x8, [x7] /* and save */\n");
     fprintf(out, "1:\n");
     fprintf(out, "    ret\n");
+    fprintf(out, ".align 4\n");
+    fprintf(out, "_return:\n");
+    fprintf(out, "    ret      /* arg0 == result */\n");
     fprintf(out, ".globl _main\n");
     fprintf(out, ".align 4\n");
     fprintf(out, "_main:\n");
+    fprintf(out, "    stp x19, x20, [sp, #-0x10]!\n");
+    fprintf(out, "    stp x21, x22, [sp, #-0x10]!\n");
+    fprintf(out, "    stp x23, x24, [sp, #-0x10]!\n");
+    fprintf(out, "    stp x25, x26, [sp, #-0x10]!\n");
     fprintf(out, "    stp fp, lr, [sp, #-0x10]!       /* save fp, lr for bl */\n");
     fprintf(out, "    bl _init\n");
 }
@@ -96,8 +182,11 @@ int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, 
             break;
         case PT_FUN:
             switch(entry->value.num) {
-                case 0: // '+'
-                case 1: // '*'
+                case 0: // '+'; all these functions have their own operator
+                case 1: // '-'
+                case 2: // '&'
+                case 3: // '|'
+                case 4: // '^'
                     if (n_arg == 0) {
                         // if function is invoked directly, use processor's math operations
                         for (int i=2; i<n_args; i++) {
@@ -108,17 +197,30 @@ int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, 
                         fprintf (out, "    adr %s, %s\n", regnames[n_arg], cmdnames[entry->value.num]);
                     }
                     break;
-                case 2: // '%' -- support function's written form differs from primitive name; solve by also using 'cmdname' for this
+                case 5: // '~'
+                case 6: // '*'; apart from the function call we presently make, this operator requires a different expression form from '+' etc. on x86
+                case 7: // '/'
+                case 8: // '%'
+                case 9: // '='
+                case 10: // '<'
+                case 11: // '>'
+                case 12: // '<='
+                case 13: // '>='
+                case 14: // '!'
+                case 15: // '&&'
+                case 16: // '||'
+                case 17: // '$'
+                    if (n_args < num_regnames) fprintf(out, "    mov %s, #0 /* mark end of potential varargs */\n", regnames[n_args]);
                     if (n_arg == 0) {
                         // if function is invoked directly, call it
-                        fprintf (out, "    bl %s            /* call '%s'          */\n", cmdnames[entry->value.num], primitive_names[entry->value.num]);
-                        fprintf(out, "    ldp fp, lr, [sp], #0x10    /* restore fp, lr after bl */\n");
+                        fprintf(out, "    bl %s            /* call '%s'          */\n", cmdnames[entry->value.num], primitive_names[entry->value.num]);
                     } else {
                         // if this is a function pointer argument, just supply the pointer
                         fprintf (out, "    adr %s, %s\n", regnames[n_arg], cmdnames[entry->value.num]);
                     }
                     break;
                 default: // "funcall", "printnum", "print", ...
+                    if (n_args < num_regnames) fprintf(out, "    mov %s, #0 /* mark end of potential varargs */\n", regnames[n_args]);
                     if (n_arg == 0) { // that's the function position; in any other position, function == common argument
                         fprintf (out, "    bl _%s\n", primitive_names[entry->value.num]);
                     } else {
@@ -199,5 +301,9 @@ void emit_call_subexpr(FILE * out) {
 
 void emit_end(FILE * out) {
     fprintf(out, "    ldp fp, lr, [sp], #0x10    /* restore fp, lr after bl */\n");
+    fprintf(out, "    ldp x25, x26, [sp], #0x10\n");
+    fprintf(out, "    ldp x23, x24, [sp], #0x10\n");
+    fprintf(out, "    ldp x21, x22, [sp], #0x10\n");
+    fprintf(out, "    ldp x19, x20, [sp], #0x10\n");
     fprintf(out, "    ret\n");
 }

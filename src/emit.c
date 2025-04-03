@@ -120,7 +120,7 @@ int emit_code(FILE * out, ParseStack * stack, int from, char until) {
         if (from < stack->length) {
             ParseStackEntry * entry = &stack->entries[from];
             if (entry->type == PT_CLS && entry->value.num == until) return from+1;
-            if (entry->type == PT_CLS && entry->value.num != until) { printf ("Erreur\n");};
+            if (entry->type == PT_CLS && entry->value.num != until) { printf ("Parse error: expected %c got %c\n", until, entry->value.num);};
         }
     }
     return from;

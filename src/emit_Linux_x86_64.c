@@ -20,7 +20,7 @@ void emit_start(FILE * out) {
     }
     fprintf(out, "not:\n");
     fprintf(out, "    mov %s, %s     /* move to return reg             */\n", regnames[1], regnames[0]);
-    fprintf(out, "    not %s        /* direct multiply (rax is implicit) */\n", regnames[0]);
+    fprintf(out, "    not %s        /* direct not                      */\n", regnames[0]);
     fprintf(out, "    ret\n");
     fprintf(out, "mul:\n");
     fprintf(out, "    mov %s, %%rax     /* move to return reg             */\n", regnames[1]);
@@ -85,11 +85,13 @@ void emit_start(FILE * out) {
     fprintf(out, "    je 0f\n");
     fprintf(out, "    mov $1, %s\n", regnames[0]);
     fprintf(out, "0:\n");
+    fprintf(out, "    ret\n");
     fprintf(out, "lor:\n");
     fprintf(out, "    mov $0, %s    /* assume false */ \n", regnames[0]);
     fprintf(out, "    cmp $0, %s\n", regnames[1]);
     fprintf(out, "    je 0f\n");
     fprintf(out, "    mov $1, %s\n", regnames[0]);
+    fprintf(out, "    ret\n");
     fprintf(out, "0:\n");
     fprintf(out, "    cmp $0, %s\n", regnames[2]);
     fprintf(out, "    je 0f\n");
@@ -121,13 +123,6 @@ void emit_start(FILE * out) {
         fprintf(out, "    mov %s, %s\n", regnames[i], regnames[i-1]);
     }
     fprintf(out, "    jmp *%s           /* let target return to caller    */\n", regnames[0]);
-//    fprintf(out, "define:\n"); // should be equivalent to the one in primitives.c, so may as well keep portable
-//    fprintf(out, "    mov top_variables(%%rip), %%rax\n");
-//    fprintf(out, "    mov %s, 0(%%rax) /* store name                     */\n", regnames[1]);
-//    fprintf(out, "    mov %s, 8(%%rax)  /* store value                    */\n", regnames[2]);
-//    fprintf(out, "    add $16, %%rax        /* increment top_variables        */\n");
-//    fprintf(out, "    mov %%rax, top_variables(%%rip) /* and save */\n");
-//    fprintf(out, "    ret\n");
     fprintf(out, "args:\n");
     fprintf(out, "    mov top_variables(%%rip), %%rax\n");
     for (int i=1;i<=num_retnames; i++) {

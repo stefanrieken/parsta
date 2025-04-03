@@ -78,7 +78,7 @@ test "||" true (|| false 33);
 # Comparisons
 test "<"  true  (< 1 2);
 test "="  false (= 1 2);
-test ">"  false (> 1 2);
+test ">"  false (> 1 1);
 test "<=" true  (<= 1 2);
 test ">=" false (>= 1 2);
 

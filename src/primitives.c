@@ -10,6 +10,7 @@ int printnum(int a) {
 }
 
 int print(char * a, char * b, char * c, char * d, char * e, char * f) {
+    //printf("Num vars: %ld\n", (top_variables - variables)); // C deals with the 'sizeof' aspect
     printf("%s", a); if (b == NULL) return 0;
     printf("%s", b); if (c == NULL) return 0;
     printf("%s", c); if (d == NULL) return 0;
@@ -22,7 +23,7 @@ int print(char * a, char * b, char * c, char * d, char * e, char * f) {
 // Var support
 typedef struct Variable {
     char * name;
-   union {
+    union {
         intptr_t num;
         void * ptr;
     } value;
@@ -37,14 +38,14 @@ void init() {
     variables = malloc(sizeof(Variable) * NUM_VARS);
     top_variables = variables;
     end_variables = variables + (sizeof(Variable) * NUM_VARS);
-    //printf("sizeof Variable: %ld\n", sizeof(Variable));
+    printf("sizeof Variable: %ld\n", sizeof(Variable));
 }
 
 Variable * slot(char * name) {
     // printf("Find var %s in %p %p\n", name, top_variables, variables);
     for (Variable * var = top_variables-1; var >= variables; var--) {
         if (var->name == name) { // exact same string pointer
-            // printf("Found it!\n");
+            //printf("Var %s = %ld\n", name, var->value.num);
             return var;
         }
     }
