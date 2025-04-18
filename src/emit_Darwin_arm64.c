@@ -141,7 +141,7 @@ void emit_start(FILE * out) {
     fprintf(out, "    adrp x7, _top_variables@PAGE\n"); // TODO hijacking an arg register here.
     fprintf(out, "    add x7, x7, _top_variables@PAGEOFF\n"); // TODO hijacking an arg register here.
     fprintf(out, "    ldr x8, [x7]\n");
-    for (int i=1;i<=num_retnames; i++) {
+    for (int i=1;i<num_regnames; i++) {
         fprintf(out, "    cmp %s, #0        /* have arg %d?                    */ \n", regnames[i], i);
         fprintf(out, "    beq %df               /* else done                      */\n", i == 1 ? 1 : 0);
         fprintf(out, "    str %s, [x8, #0]  /* store name %d                  */\n", regnames[i], i);

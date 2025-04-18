@@ -1,5 +1,10 @@
 #include <stdint.h>
 
+/**
+ * A parse stack (= budget version of a parse tree) for Pasta code,
+ * providing the amount of analysis required to emit assembly in a
+ * logical order (= sub-expressions first).
+ */
 typedef enum ParseStackType {
     PT_INT,
     PT_STR,

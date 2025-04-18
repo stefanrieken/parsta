@@ -13,6 +13,7 @@ if 1 { printnum (+ (* 3 4) (* 5 6)) };
 # General flexing:
 define "greet" {
     args "who";
+
     if 1 {
         print "Hello, ";
         print who;
@@ -21,3 +22,13 @@ define "greet" {
 };
 
 greet "world";
+
+define "x" 40;
+
+loop {
+    if (< x 43) {
+    printnum x;
+        set "x" (+ x 1);
+        return 1
+    }
+}

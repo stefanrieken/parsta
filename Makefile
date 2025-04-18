@@ -1,16 +1,21 @@
-all: test testset
+CFLAGS=-Wall -Wunused -DLEXICAL_SCOPING
+
+all: test testset scoping
 
 parsta: src/parsta.c src/emit.c src/emit_$(shell uname -s)_$(shell uname -m).c
-	gcc -Wall -Wunused $^ -o $@
+	gcc $(CFLAGS) $^ -o $@
 
 %.s: %.pasta parsta
 	./parsta $< $@
 
 test: test.s src/primitives.c
-	gcc -Os test.s src/primitives.c -o test
+	gcc $(CFLAGS) -Os test.s src/primitives.c -o test
 
 testset: testset.s src/primitives.c
-	gcc -Os testset.s src/primitives.c -o testset
+	gcc $(CFLAGS) -Os testset.s src/primitives.c -o testset
+
+scoping: scoping.s src/primitives.c
+	gcc $(CFLAGS) -Os $^ -o $@
 
 clean:
-	rm -f parsta test test.s testset testset.s
+	rm -f parsta test test.s testset testset.s scoping scoping.s

@@ -102,30 +102,49 @@ void emit_start(FILE * out) {
     fprintf(out, "    mov $0, %s    /* assume false */ \n", regnames[0]);
     fprintf(out, "    cmp $0, %s\n", regnames[1]);
     fprintf(out, "    jz 0f\n");
+#ifdef LEXICAL_SCOPING
+    fprintf(out, "    mov %s, %%r15      /* pass original closure in r15 */\n", regnames[2]);
+    fprintf(out, "    mov 8(%s), %s      /* dereference argless closure */\n", regnames[2], regnames[2]);
+#endif
     fprintf(out, "    jmp *%s           /* let target return to caller    */\n", regnames[2]);
     fprintf(out, "    ret\n");
     fprintf(out, "0:\n");
     fprintf(out, "    cmp $0, %s        /* have else block?              */\n", regnames[3]);
     fprintf(out, "    jz 0f\n");
+#ifdef LEXICAL_SCOPING
+    fprintf(out, "    mov %s, %%r15      /* pass original closure in r15 */\n", regnames[3]);
+    fprintf(out, "    mov 8(%s), %s      /* dereference argless closure */\n", regnames[3], regnames[3]);
+#endif
     fprintf(out, "    jmp *%s           /* let target return to caller    */\n", regnames[3]);
     fprintf(out, "0:\n");
     fprintf(out, "    ret\n");
     fprintf(out, "loop:\n");
     fprintf(out, "    push %s         /* save block arg to stack */\n", regnames[1]);
     fprintf(out, "0:\n");
+#ifdef LEXICAL_SCOPING
+    fprintf(out, "    mov 0(%%rsp), %%r15      /* pass original closure in r15 */\n");
+    fprintf(out, "    mov 8(%%r15), %s      /* dereference argless closure */\n", regnames[1]);
+    fprintf(out, "    call *%s\n", regnames[1]);
+#else
     fprintf(out, "    call *0(%%rsp)\n");
+#endif
     fprintf(out, "    cmp $0, %s\n", regnames[0]);
     fprintf(out, "    jnz 0b\n");
     fprintf(out, "    add $8, %%rsp     /* remove block arg from stack */\n");
     fprintf(out, "    ret\n");
+// NOTE: funcall is not needed if we can just put a func var at first position in an expression
     fprintf(out, "funcall:                /* (demo) function ptr support    */\n");
     for (int i=1; i<num_regnames; i++) {
         fprintf(out, "    mov %s, %s\n", regnames[i], regnames[i-1]);
     }
+#ifdef LEXICAL_SCOPING
+    fprintf(out, "    mov %s, %%r15      /* pass original closure in r15 */\n", regnames[0]);
+    fprintf(out, "    mov 8(%s), %s      /* dereference argless closure */\n", regnames[0], regnames[0]);
+#endif
     fprintf(out, "    jmp *%s           /* let target return to caller    */\n", regnames[0]);
     fprintf(out, "args:\n");
     fprintf(out, "    mov top_variables(%%rip), %%rax\n");
-    for (int i=1;i<=num_retnames; i++) {
+    for (int i=1;i<num_regnames; i++) {
         fprintf(out, "    cmp $0, %s        /* have arg %d?                    */ \n", regnames[i], i);
         fprintf(out, "    jz %df               /* else done                      */\n", i == 1 ? 1 : 0);
         fprintf(out, "    mov %s,  0(%%rax)  /* store name %d                  */\n", regnames[i], i);
@@ -200,7 +219,7 @@ int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, 
                     if (n_args < num_regnames) fprintf(out, "    mov $0, %s /* mark end of potential varargs */\n", regnames[n_args]);
                     fprintf(out, "    lea %s(%%rip), %s\n", primitive_names[entry->value.num], regnames[n_arg]); // That's for function pointers
                     if (n_arg == 0) { // that's the function position; in any other position, function == common argument
-                        fprintf(out, "    call *%s\n", regnames[n_arg]);
+                        fprintf(out, "    call *%s\n", regnames[0]);
                     }
                     break;
             }
@@ -218,6 +237,12 @@ int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, 
                 //    fprintf(out, "    call *%s\n", regnames[0]);
                 //}
 
+#ifdef LEXICAL_SCOPING
+                    if (n_arg == 0) { // subexpr at function position; assume it is "get" or at least yields a closure; resolve closure
+                        fprintf(out, "    mov %s, %%r15      /* pass original closure in r15 */\n", regnames[0]);
+                        fprintf(out, "    mov 8(%s), %s      /* dereference function closure */\n", regnames[0], regnames[0]);
+                    }
+#endif
                 // Skip sub-expression since it was already written
                 return skip_until_close(stack, from)-1;
             } else {
@@ -228,6 +253,14 @@ int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, 
                 fprintf(out, "0:                     /* start of block                  */\n");
                 fprintf(out, "    mov top_variables(%%rip), %%rax\n");
                 fprintf(out, "    push %%rax\n");
+
+#ifdef LEXICAL_SCOPING
+                // Setup parent pointer
+                fprintf(out, "    movq $0, 0(%%rax)  /* setup parent pointer; name = nil */\n");
+                fprintf(out, "    mov %%r15, 8(%%rax)   /* value = pos of closure */\n");
+                fprintf(out, "    add $16, %%rax       /* top_variables++                */\n");
+                fprintf(out, "    mov %%rax, top_variables(%%rip) /* and save */\n");
+#endif
 
                 int n_args2 = num_args(stack, from+1); // = -1 if no 'args'
                 if (n_args2 != -1) {
@@ -244,7 +277,7 @@ int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, 
                 if (n_args2 > 0) {
                     fprintf(out, "    add $%d, %%rsp     /* remove args from stack */\n", n_args2*8);
                 }
-                fprintf(out, "    pop %s\n", regnames[1]);
+                fprintf(out, "    pop %s  /* restore top of variables to before call */\n", regnames[1]);
                 fprintf(out, "    mov %s, top_variables(%%rip)\n", regnames[1]);
                 fprintf(out, "    ret                 /* return from block              */\n");
                 fprintf(out, "%d:\n", block_depth);

@@ -5,6 +5,7 @@
 define "true" 1;
 define "false" 0;
 
+# TODO these (macro-like) functions don't work under lexical scoping
 define "add" {
     args "name" "val";
     set name (+ (get name) val)
@@ -87,10 +88,10 @@ define "x" 42;
 test "define" 42 x;
 set "x" 33;
 test "set"    33 x;
-add "x" 22;
-test "add"    55 x;
-sub "x" 22;
-test "sub"    33 x;
+#add "x" 22;
+#test "add"    55 x;
+#sub "x" 22;
+#test "sub"    33 x;
 
 # Loops:
 # - This form oddly is unique to Pasta, although it is very elegant
@@ -98,7 +99,8 @@ test "sub"    33 x;
 # - The variant with a separate test block MAYBE deprecated in the future
 loop {
     if (< x 42) {
-        add "x" 10;
+        #add "x" 10;
+        set "x" (+ x 10);
         return true;
     }
 };

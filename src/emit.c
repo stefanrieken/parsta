@@ -98,6 +98,7 @@ int emit_this_expr(FILE * out, ParseStack * stack, int from, int stashbase) {
     return i;
 }
 
+// Index into the registers where we temporarily keep return values of subexpr calls
 int stashptr;
 
 // Return position AFTER emitted code, including close

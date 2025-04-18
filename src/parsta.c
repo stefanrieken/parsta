@@ -2,22 +2,22 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include "parsta.h"
 
-/**
- * A parse stack (= budget version of a parse tree) for Pasta code,
- * providing the amount of analysis required to emit assembly in a
- * logical order (= sub-expressions first).
- */
-
 char * primitive_names[] = {
     "+", "-", "&", "|", "^", "~", "*", "/", "\%", "=", "<", ">", "<=", ">=", "!", "&&", "||", "$", "if", "loop", "funcall", "printnum", "print", "define", "get", "set", "args", "return"
+#ifdef LEXICAL_SCOPING
+    , "bind"
+#endif
 };
 int num_primitives = (sizeof(primitive_names) / sizeof(char *));
+#define PRIM_FUNCALL 20
 #define PRIM_DEFINE 23
 #define PRIM_GET 24
 #define PRIM_ARGS 26
+#define PRIM_BIND 28
 
 ParseStackEntry * push (ParseStack * stack, ParseStackType type, int value) {
     if (stack->length >= stack->size) { printf ("Parse stack overflow\n"); exit(-1); }
@@ -31,6 +31,11 @@ ParseStackEntry * push_str (ParseStack * stack, ParseStackType type, char * valu
     ParseStackEntry * entry = push(stack, type, 0);
     entry->value.str = value;
     return entry;
+}
+
+ParseStackEntry * peek(ParseStack * stack) {
+    if (stack->length == 0) return NULL;
+    return &stack->entries[stack->length-1];
 }
 
 StringEntry * unique_strings;
@@ -53,6 +58,18 @@ char * unique_string(char * value) {
 }
 
 #define BUF_LEN 256
+
+#ifdef LEXICAL_SCOPING
+
+// If we want to simplify this detection in case of ';',
+// either add a matching PT_OPN at start of each toplevel expression,
+// or switch to parsing on a per-line basis.
+bool at_function_position(ParseStack * stack) {
+    ParseStackEntry * previous = peek(stack);
+    return previous == NULL || previous->type == PT_OPN || (previous->type == PT_CLS && previous->value.num == ';');
+}
+
+#endif
 
 void parse (FILE * in, FILE * out, ParseStack * stack) {
     int ch = fgetc(in);
@@ -83,10 +100,24 @@ void parse (FILE * in, FILE * out, ParseStack * stack) {
             }
             push(stack, PT_INT, numval);
         } else if (ch == '{' || ch == '(') {
+#ifdef LEXICAL_SCOPING
+            if (ch == '{' && !at_function_position(stack)) {
+                // add 'bind' call. This is effectively similar to (define "(closure)" { ... } )
+                // notice we don't need to add 'bind' for a direct invocation
+                push(stack, PT_OPN, '(');
+                push(stack, PT_FUN, PRIM_BIND);
+            }
+#endif
             push(stack, PT_OPN, ch);
             ch = fgetc(in);
         } else if (ch == '}' || ch == ')' || ch == ';') {
             push(stack, PT_CLS, ch);
+#ifdef LEXICAL_SCOPING
+            if (ch == '}') {
+                // closing bracket to 'bind' call
+                push(stack, PT_CLS, ')');
+            }
+#endif
             ch = fgetc(in);
         } else if (ch == '\"') {
             char * buffer = NULL;
@@ -121,13 +152,30 @@ void parse (FILE * in, FILE * out, ParseStack * stack) {
             if (idx == -1) {
                 // Not recognized as builtin; so assume it's a var
 //                push_str(stack, PT_REF, unique_string(buffer));
+
                 push(stack, PT_OPN, '(');
                 push(stack, PT_FUN, PRIM_GET);
                 push_str(stack, PT_STR, unique_string(buffer));
                 push(stack, PT_CLS, ')');
                 
             } else {
+                // This is a as a built-in / primitive function
+
+#ifdef LEXICAL_SCOPING
+                if (at_function_position(stack)) {
+                    // Don't wrap a primitive we immediately execute
+                    push(stack, PT_FUN, idx);
+                } else {
+                    // Do wrap a primitive we pass as an argument,
+                    // so that it can eventually be dereferenced like any other function
+                    push(stack, PT_OPN, '(');
+                    push(stack, PT_FUN, PRIM_BIND);
+                    push(stack, PT_FUN, idx);
+                    push(stack, PT_CLS, ')');
+                }
+#else
                 push(stack, PT_FUN, idx);
+#endif
             }
         }
     }
@@ -162,6 +210,7 @@ int print_expr(ParseStack * stack, int from, char until) {
             case PT_CLS:
                 printf("%c ", entry->value.num);
                 if (entry->value.num == until) return i;
+                if (entry->value.num == ';') printf("\n");
                 else if (entry->value.num != ';') printf("Bracket mismatch\n");
 //                else if (entry->value.num == ';') n_arg = 0;
                 break;
