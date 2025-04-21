@@ -10,6 +10,11 @@ char * retnames[] = { "%r12", "%r13", "%r14", "%r15" } ; // return value appears
 int num_regnames = sizeof(regnames) / sizeof(char *);
 int num_retnames = sizeof(retnames) / sizeof(char *);
 
+#ifdef LEXICAL_SCOPING
+// TODO: choose register to pass closure to be independent from those used for return values
+#define CLOSURE_REG "%r15"
+#endif
+
 void emit_start(FILE * out) {
 //    printf(".text\n");
     for (int i=0; i<5;i++) { // The referenced versions of direct-operator functions
@@ -103,7 +108,7 @@ void emit_start(FILE * out) {
     fprintf(out, "    cmp $0, %s\n", regnames[1]);
     fprintf(out, "    jz 0f\n");
 #ifdef LEXICAL_SCOPING
-    fprintf(out, "    mov %s, %%r15      /* pass original closure in r15 */\n", regnames[2]);
+    fprintf(out, "    mov %s, %s      /* pass original closure in %s */\n", regnames[2], CLOSURE_REG, CLOSURE_REG);
     fprintf(out, "    mov 8(%s), %s      /* dereference argless closure */\n", regnames[2], regnames[2]);
 #endif
     fprintf(out, "    jmp *%s           /* let target return to caller    */\n", regnames[2]);
@@ -112,7 +117,7 @@ void emit_start(FILE * out) {
     fprintf(out, "    cmp $0, %s        /* have else block?              */\n", regnames[3]);
     fprintf(out, "    jz 0f\n");
 #ifdef LEXICAL_SCOPING
-    fprintf(out, "    mov %s, %%r15      /* pass original closure in r15 */\n", regnames[3]);
+    fprintf(out, "    mov %s, %s      /* pass original closure in %s */\n", regnames[3], CLOSURE_REG, CLOSURE_REG);
     fprintf(out, "    mov 8(%s), %s      /* dereference argless closure */\n", regnames[3], regnames[3]);
 #endif
     fprintf(out, "    jmp *%s           /* let target return to caller    */\n", regnames[3]);
@@ -122,8 +127,8 @@ void emit_start(FILE * out) {
     fprintf(out, "    push %s         /* save block arg to stack */\n", regnames[1]);
     fprintf(out, "0:\n");
 #ifdef LEXICAL_SCOPING
-    fprintf(out, "    mov 0(%%rsp), %%r15      /* pass original closure in r15 */\n");
-    fprintf(out, "    mov 8(%%r15), %s      /* dereference argless closure */\n", regnames[1]);
+    fprintf(out, "    mov 0(%%rsp), %s      /* pass original closure in %s */\n", CLOSURE_REG, CLOSURE_REG);
+    fprintf(out, "    mov 8(%s), %s      /* dereference argless closure */\n", CLOSURE_REG, regnames[1]);
     fprintf(out, "    call *%s\n", regnames[1]);
 #else
     fprintf(out, "    call *0(%%rsp)\n");
@@ -138,7 +143,7 @@ void emit_start(FILE * out) {
         fprintf(out, "    mov %s, %s\n", regnames[i], regnames[i-1]);
     }
 #ifdef LEXICAL_SCOPING
-    fprintf(out, "    mov %s, %%r15      /* pass original closure in r15 */\n", regnames[0]);
+    fprintf(out, "    mov %s, %s      /* pass original closure in %s */\n", regnames[0], CLOSURE_REG, CLOSURE_REG);
     fprintf(out, "    mov 8(%s), %s      /* dereference argless closure */\n", regnames[0], regnames[0]);
 #endif
     fprintf(out, "    jmp *%s           /* let target return to caller    */\n", regnames[0]);
@@ -239,7 +244,7 @@ int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, 
 
 #ifdef LEXICAL_SCOPING
                     if (n_arg == 0) { // subexpr at function position; assume it is "get" or at least yields a closure; resolve closure
-                        fprintf(out, "    mov %s, %%r15      /* pass original closure in r15 */\n", regnames[0]);
+                        fprintf(out, "    mov %s, %s      /* pass original closure in %s */\n", regnames[0], CLOSURE_REG, CLOSURE_REG);
                         fprintf(out, "    mov 8(%s), %s      /* dereference function closure */\n", regnames[0], regnames[0]);
                     }
 #endif
@@ -257,7 +262,7 @@ int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, 
 #ifdef LEXICAL_SCOPING
                 // Setup parent pointer
                 fprintf(out, "    movq $0, 0(%%rax)  /* setup parent pointer; name = nil */\n");
-                fprintf(out, "    mov %%r15, 8(%%rax)   /* value = pos of closure */\n");
+                fprintf(out, "    mov %s, 8(%%rax)   /* value = pos of closure */\n", CLOSURE_REG);
                 fprintf(out, "    add $16, %%rax       /* top_variables++                */\n");
                 fprintf(out, "    mov %%rax, top_variables(%%rip) /* and save */\n");
 #endif

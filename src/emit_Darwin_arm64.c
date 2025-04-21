@@ -11,6 +11,11 @@ char * retnames[] = { "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26" } ;
 int num_regnames = sizeof(regnames) / sizeof(char *);
 int num_retnames = sizeof(retnames) / sizeof(char *);
 
+#ifdef LEXICAL_SCOPING
+// TODO: choose register to pass closure to be independent from those used for return values
+#define CLOSURE_REG "x26"
+#endif
+
 void emit_start(FILE * out) {
     // Improvement suggestions:
     // 1) only emit asm utility functions that are actually referenced (e.g. at end instead of start)
@@ -111,10 +116,18 @@ void emit_start(FILE * out) {
     fprintf(out, "_if:\n");
     fprintf(out, "    cmp %s, #0\n", regnames[1]);
     fprintf(out, "    beq 0f\n");
+#ifdef LEXICAL_SCOPING
+    fprintf(out, "    mov %s, %s      /* pass original closure in %s */\n", CLOSURE_REG, regnames[2], CLOSURE_REG);
+    fprintf(out, "    ldr %s, [%s, #8]   /* dereference function closure */\n", regnames[2], regnames[2]);
+#endif
     fprintf(out, "    br %s           /* let target return to caller    */\n", regnames[2]);
     fprintf(out, "0:\n");
     fprintf(out, "    cmp %s, #0     /* have else block? */\n", regnames[3]);
     fprintf(out, "    beq 0f\n");
+#ifdef LEXICAL_SCOPING
+    fprintf(out, "    mov %s, %s      /* pass original closure in %s */\n", CLOSURE_REG, regnames[3], CLOSURE_REG);
+    fprintf(out, "    ldr %s, [%s, #8]   /* dereference function closure */\n", regnames[3], regnames[3]);
+#endif
     fprintf(out, "    br %s           /* let target return to caller    */\n", regnames[3]);
     fprintf(out, "0:\n");
     fprintf(out, "    mov %s, #0      /* return false if no else */\n", regnames[1]);
@@ -124,8 +137,14 @@ void emit_start(FILE * out) {
     fprintf(out, "    stp fp, lr, [sp, #-0x10]!       /* save fp, lr for bl */\n");
     fprintf(out, "    str %s, [sp, #-16]!         /* save block arg to stack */\n", regnames[1]);
     fprintf(out, "0:\n");
-    fprintf(out, "    ldr %s, [sp]     /* recall block arg */\n", regnames[0]);
-    fprintf(out, "    blr %s           /* call block    */\n", regnames[0]);
+#ifdef LEXICAL_SCOPING
+    fprintf(out, "    ldr %s, [sp]      /* pass original closure in %s */\n", CLOSURE_REG, CLOSURE_REG);
+    fprintf(out, "    ldr %s, [%s, #8]   /* dereference function closure */\n", regnames[1], CLOSURE_REG);
+    fprintf(out, "    blr %s           /* call block    */\n", regnames[1]);
+#else
+    fprintf(out, "    ldr %s, [sp]     /* recall block arg */\n", regnames[1]);
+    fprintf(out, "    blr %s           /* call block    */\n", regnames[1]);
+#endif
     fprintf(out, "    cmp %s, #0\n", regnames[1]);
     fprintf(out, "    bne 0b\n");
     fprintf(out, "    add sp, sp, #16     /* remove block arg from stack */\n");
@@ -135,6 +154,10 @@ void emit_start(FILE * out) {
     for (int i=1; i<num_regnames; i++) {
         fprintf(out, "    mov %s, %s\n", regnames[i-1], regnames[i]);
     }
+#ifdef LEXICAL_SCOPING
+    fprintf(out, "    mov %s, %s      /* pass original closure in %s */\n", CLOSURE_REG, regnames[0], CLOSURE_REG);
+    fprintf(out, "    ldr %s, [%s, #8]   /* dereference function closure */\n", regnames[0], regnames[0]);
+#endif
     fprintf(out, "    br %s               /* let target return to caller     */\n", regnames[0]);
     fprintf(out, ".align 4\n");
     fprintf(out, "_args:\n");
@@ -242,7 +265,13 @@ int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, 
                 //    fprintf(out, "    bl %s%s\n", regnames[0]);
                 //}
 
-                // Skip sub-expression since it was already written
+#ifdef LEXICAL_SCOPING
+                if (n_arg == 0) { // subexpr at function position; assume it is "get" or at least yields a closure; resolve closure
+                    fprintf(out, "    mov %s, %s      /* pass original closure in %s */\n", CLOSURE_REG, regnames[0], CLOSURE_REG);
+                    fprintf(out, "    ldr %s, [%s, #8]   /* dereference function closure */\n", regnames[0], regnames[0]);
+                }
+#endif
+            // Skip sub-expression since it was already written
                 return skip_until_close(stack, from)-1;
             } else {
                 block_depth++;
@@ -252,6 +281,18 @@ int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, 
                 fprintf(out, ".align 4\n");
                 fprintf(out, "0:                      /* start of block                 */\n");
                 fprintf(out, "    stp fp, lr, [sp, #-0x10]!       /* save fp, lr for bl */\n");
+                fprintf(out, "    adrp x7, _top_variables@PAGE\n"); // TODO hijacking an arg register here.
+                fprintf(out, "    add x7, x7, _top_variables@PAGEOFF\n"); // TODO hijacking an arg register here.
+                fprintf(out, "    ldr x8, [x7]\n");
+                fprintf(out, "    str x8, [sp, #-16]!\n");
+
+    #ifdef LEXICAL_SCOPING
+                // Setup parent pointer
+                fprintf(out, "    str wzr, [x8]  /* setup parent pointer; name = nil */\n");
+                fprintf(out, "    str %s, [x8, #8]   /* value = pos of closure */\n", CLOSURE_REG);
+                fprintf(out, "    add x8, x8, #16       /* top_variables++                */\n");
+                fprintf(out, "    str x8, [x7]      /* and save */\n");
+#endif
 
                 int n_args2 = num_args(stack, from+1); // = -1 if no 'args'
                 if (n_args2 != -1) {
@@ -268,6 +309,10 @@ int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, 
                 if (n_args2 > 0) {
                     fprintf(out, "    add sp, sp, #%d     /* remove args from stack */\n", n_args2*16);
                 }
+                fprintf(out, "    ldr x8, [sp], #16  /* restore top of variables to before call */\n");
+                fprintf(out, "    adrp x7, _top_variables@PAGE\n"); // TODO hijacking an arg register here.
+                fprintf(out, "    add x7, x7, _top_variables@PAGEOFF\n"); // TODO hijacking an arg register here.
+                fprintf(out, "    str x8, [x7]\n");
                 fprintf(out, "    ldp fp, lr, [sp], #0x10    /* restore fp, lr after bl */\n");
                 fprintf(out, "    ret                 /* return from block              */\n");
                 fprintf(out, "%d:\n", block_depth);
