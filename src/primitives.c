@@ -44,7 +44,7 @@ void init() {
     variables = malloc(sizeof(Variable) * NUM_VARS);
     top_variables = variables;
     end_variables = variables + (sizeof(Variable) * NUM_VARS);
-    printf("sizeof Variable: %ld\n", sizeof(Variable));
+    printf("sizeof Variable: %d\n", (int) sizeof(Variable));
 //    printf("sizeof intptr: %ld void *: %ld\n", sizeof(intptr_t), sizeof(void *));
 //    printf("value offset: %ld\n", (char **) &(variables->value.ptr) - &(variables->name));
 
