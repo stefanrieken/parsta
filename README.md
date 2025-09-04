@@ -9,7 +9,7 @@ integer, boolean and bitwise operations are compiled directly to their assembly
 equivalents where possible.
 
 As with the interpreter, variables are dynamically created and resolved through
-some very simple C callbacks, presently without support for lexical scoping.
+some very simple C callbacks, with support for lexical scoping.
 
 The currently maintained backends are:
 - Linux x86-64 (gcc)
@@ -18,8 +18,8 @@ The currently maintained backends are:
 
 Generally changes are done in one port at the time, so if a port appears broken
 then the Git log may confirm that it is simply behind with recent changes.
-At any rate, the Makefile selects a file called emit_{os}_{arch}.c, and if your
-port is missing, you can try adding it.
+To get the right port, the Makefile selects a file called `emit_{os}_{arch}.c`,
+and if your port is missing, you can try adding it.
 
 Otherwise, typing `make test` should build the `parsta` executable, _and_ let
 it compile `test.pasta` into `test.s`, _and_ compile that into the `test`

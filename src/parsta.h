@@ -56,6 +56,13 @@ void emit_start(FILE * out);
 void emit_reserve_stack(FILE * out, int n);
 void emit_restore_stack(FILE * out, int n);
 
+void emit_int_arg(FILE * out, int num, int n_arg);
+void emit_string_arg(FILE * out, int idx, int n_arg);
+void emit_builtin(FILE * out, char * cmdname, int n_arg, int n_args);
+void emit_func_arg(FILE * out, char * cname, char * pname, int n_arg, int n_args);
+int emit_subexpr(FILE * out, ParseStack * stack, int from, int n_arg, int * stashbase);
+int emit_block(FILE * out, ParseStack * stack, int from, int n_arg);
+
 int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, int * stashbase);
 void emit_save_retval(FILE * out, int n_arg);
 void emit_move_retval(FILE * out, int n_arg);
