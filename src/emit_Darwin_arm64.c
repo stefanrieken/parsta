@@ -2,6 +2,11 @@
 
 #include "parsta.h"
 
+/**
+ * This Darwin (Mac OS) Aarch64 port targets the LLVM assembler.
+ * I'm not sure whether this adds further dialect differences to the Linux Aarch32 port.
+ * Another small platform difference is that C functions are prepended with an underscore.
+ */
 //char * cmdnames[] = { "add", "sub", "mul", "div", "remainder", "equals"};
 char * cmdnames[] = { "add", "sub", "and", "orr", "eor", "not", "mul", "udiv", "remainder", "equals", "lt", "gt", "lte", "gte", "lnot", "land", "lor", "_dollar"};
 char * regnames[] = { "x8", "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"} ; // NOTE: first reg in this list is for function pointer (if needed)

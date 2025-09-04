@@ -233,7 +233,7 @@ int main (int argc, char ** argv) {
     parse(infile, outfile, &stack);
     print_expr(&stack, 0, EOF);
     printf("\n");
-    
+
     emit_strings(outfile);
     emit_start(outfile);
     emit_code(outfile, &stack, 0, EOF);

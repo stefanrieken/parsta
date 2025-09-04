@@ -11,14 +11,19 @@ equivalents where possible.
 As with the interpreter, variables are dynamically created and resolved through
 some very simple C callbacks, presently without support for lexical scoping.
 
-There currently are two backends: Linux x86-64 (gcc) and MacOS arm64 (clang). I
-expect e.g. the combination of arm64 and Linux to be slightly different again.
+The currently maintained backends are:
+- Linux x86-64 (gcc)
+- MacOS arm64 (clang)
+- Linux arm32 (gcc)
+
+Generally changes are done in one port at the time, so if a port appears broken
+then the Git log may confirm that it is simply behind with recent changes.
 At any rate, the Makefile selects a file called emit_{os}_{arch}.c, and if your
 port is missing, you can try adding it.
 
 Otherwise, typing `make test` should build the `parsta` executable, _and_ let
 it compile `test.pasta` into `test.s`, _and_ compile that into the `test`
-executable.
+executable. 
 
 Next, you can run the `test` executable:
 

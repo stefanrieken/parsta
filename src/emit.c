@@ -27,6 +27,17 @@ int skip_until_close(ParseStack * stack, int from) {
     return i;
 }
 
+int count_expr_args(ParseStack * stack, int from) {
+    int n_args = 0;
+    for (int i=from; i<stack->length;i++) {
+        ParseStackEntry * entry = &(stack->entries[i]);
+        if(entry->type == PT_CLS) break;
+	if(entry->type == PT_OPN) i = skip_until_close(stack, i)-1;
+	n_args++;
+    }
+    return n_args;
+}
+
 // Return position AFTER close IF close is ';'
 // So at any rate, return position AFTER expression
 int emit_subexprs(FILE * out, ParseStack * stack, int from) {
@@ -48,7 +59,7 @@ int emit_subexprs(FILE * out, ParseStack * stack, int from) {
 
         if (entry->type == PT_OPN) {
             if (entry->value.num == '(') {
-               if (to_stash > -1) { emit_save_retval(out); } // for previous subexpr
+               if (to_stash > -1) { emit_save_retval(out, to_stash); } // for previous subexpr
                i = emit_code(out, stack, i+1, ')')-1; // correcting for upcoming i++
                to_stash = n_arg;
             } else {
@@ -108,9 +119,13 @@ int emit_code(FILE * out, ParseStack * stack, int from, char until) {
 
     while(from < stack->length) {
         // Now emitting a single expression, with possible sub-expressions
+	int n_args = count_expr_args(stack, from);
+	if (n_args > NUM_ARG_REGS) emit_reserve_stack(out, n_args - NUM_ARG_REGS); // Including end of varargs marker
 
         int from2 = emit_subexprs(out, stack, from);
         int from3 = emit_this_expr(out, stack, from, saved_stashptr);
+	if (n_args > NUM_ARG_REGS) emit_restore_stack(out, n_args - NUM_ARG_REGS);
+
         // sanity check: do both functions agree on end of current expression / start of new?
         if (from2 != from3) printf("Error emitting code: %d %d\n", from2, from3);
         //else printf("Nice: %d %d\n", from2, from3);
@@ -154,3 +169,4 @@ int num_args(ParseStack * stack, int from) {
     // else
     return -1; // no 'args' defined
 }
+

@@ -1,4 +1,4 @@
-CFLAGS=-Wall -Wunused -DLEXICAL_SCOPING
+CFLAGS=-march=native -Wall -Wunused -DLEXICAL_SCOPING -DARM_HAS_DIV
 
 all: test testset scoping
 

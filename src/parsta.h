@@ -50,9 +50,14 @@ int skip_until_close(ParseStack * stack, int from);
 int num_args(ParseStack * stack, int from);
 
 // Defined per platform
+extern const int NUM_ARG_REGS;
+
 void emit_start(FILE * out);
+void emit_reserve_stack(FILE * out, int n);
+void emit_restore_stack(FILE * out, int n);
+
 int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, int * stashbase);
-void emit_save_retval(FILE * out);
+void emit_save_retval(FILE * out, int n_arg);
 void emit_move_retval(FILE * out, int n_arg);
 void emit_call_subexpr(FILE * out);
 void emit_end(FILE * out);
