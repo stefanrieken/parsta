@@ -5,17 +5,6 @@
 define "true" 1;
 define "false" 0;
 
-# TODO these (macro-like) functions don't work under lexical scoping
-define "add" {
-    args "name" "val";
-    set name (+ (get name) val)
-};
-
-define "sub" {
-    args "name" "val";
-    set name (- (get name) val)
-};
-
 # Pasta Core Language Definition Test Set
 #
 # This file both tests and defines the core of the Pasta language,
@@ -33,7 +22,7 @@ define "normal" "\x1b[0m";
 define "tests_run" 0;
 define "succeeded" 0;
 
-define "test" {
+define "test" (bind {
     args "comment" "expected" "result";
 
     #add "tests_run" 1;
@@ -45,7 +34,7 @@ define "test" {
     } {
         print red comment normal "\n"
     }
-};
+});
 
 # Integer functions:
 # - At least a positive range of 0...65535

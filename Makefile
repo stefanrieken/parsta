@@ -1,4 +1,6 @@
-CFLAGS=-march=native -Wall -Wunused -DLEXICAL_SCOPING -DARM_HAS_DIV
+# Note: AUTO_BIND roughly mimics the same option in the Pasta interpreter.
+# We eventually want to get rid of this option altogether.
+CFLAGS=-march=native -Wall -Wunused -DLEXICAL_SCOPING -DARM_HAS_DIV #-DAUTO_BIND
 
 all: test testset scoping
 

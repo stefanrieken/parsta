@@ -5,6 +5,12 @@
 
 #include "parsta.h"
 
+extern const char * cmdnames[];
+
+extern const int NUM_ARG_REGS;
+extern const int NUM_BUILTINS;
+extern const int NUM_COMMANDS;
+
 // Return position AFTER close
 int skip_until_close(ParseStack * stack, int from) {
     int n_open = 0;
@@ -25,6 +31,52 @@ int skip_until_close(ParseStack * stack, int from) {
     }
     printf("Error: no closing bracket found\n");
     return i;
+}
+
+int unique_string_idx(ParseStackEntry * entry) {
+    int idx = 0;
+    StringEntry * e = unique_strings;
+    while(e != NULL) { if (e->str == entry->value.str) break;  e = e->next; idx++; }
+    return idx;
+}
+
+int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, int * stashbase) {
+    ParseStackEntry * entry = &(stack->entries[from]);
+    switch(entry->type) {
+        case PT_INT:
+            emit_int_arg(out, entry->value.num, n_arg);
+            break;
+        case PT_STR:
+	    emit_string_arg(out, unique_string_idx(entry), n_arg);
+            break;
+        case PT_FUN:
+            if (entry->value.num < NUM_BUILTINS) { // operators directly supported by CPU: '+', '-', '&', '|', '^'
+                emit_builtin(out, cmdnames[entry->value.num], n_arg, n_args);
+	    } else if (entry->value.num < NUM_COMMANDS) { // other operators whose cmdnames are translated to different primitive names ('~' ... '$')
+                emit_func_arg(out, cmdnames[entry->value.num], primitive_names[entry->value.num], n_arg, n_args);
+            } else { // other primitives: "funcall", "printnum", "print", ...
+                emit_func_arg(out, primitive_names[entry->value.num], primitive_names[entry->value.num], n_arg, n_args);
+            }
+            break;
+//        case PT_REF:
+//            break;
+        case PT_OPN:
+            if (entry->value.num == '(') {
+                if (n_arg <= NUM_ARG_REGS) // (armv7l:) other subexpr results are already placed on stack
+                return emit_subexpr(out, stack, from, n_arg, stashbase);
+                else return from;
+            } else { // '{': block
+                return emit_block(out, stack, from, n_arg);
+            }
+	    break;
+        case PT_CLS:
+            // Expecting caller to halt expression at CLS
+            // without calling us (even in case of ';')
+            printf("Error: bracket mismatch\n");
+            break;
+    }
+
+    return from;
 }
 
 int count_expr_args(ParseStack * stack, int from) {

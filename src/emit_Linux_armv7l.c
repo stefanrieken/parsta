@@ -240,7 +240,7 @@ void emit_string_arg(FILE * out, int idx, int n_arg) {
     }
 }
 
-void emit_builtin(FILE * out, char * cmdname, int n_arg, int n_args) {
+void emit_builtin(FILE * out, const char * cmdname, int n_arg, int n_args) {
     if (n_arg == 0) {
         // if function is invoked directly, use processor's math operations
         for (int i=2; i<n_args; i++) {
@@ -252,7 +252,7 @@ void emit_builtin(FILE * out, char * cmdname, int n_arg, int n_args) {
     }
 }
 
-void emit_func_arg(FILE * out, char * cname, char * pname, int n_arg, int n_args) {
+void emit_func_arg(FILE * out, const char * cname, const char * pname, int n_arg, int n_args) {
     if (n_arg == 0) { // function position
         emit_end_of_varargs(out, n_args);
         // if function is invoked directly, call it
@@ -329,48 +329,6 @@ int emit_block(FILE * out, ParseStack * stack, int from, int n_arg) {
     block_depth--;
     return from;
 }	
-
-// TODO: move this func to emit.c, and just keep all arch-dependent calls here (do this for all ports)
-int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, int * stashbase) {
-    ParseStackEntry * entry = &(stack->entries[from]);
-    int idx;
-    switch(entry->type) {
-        case PT_INT:
-            emit_int_arg(out, entry->value.num, n_arg);
-            break;
-        case PT_STR:
-            idx = 0;
-            StringEntry * e = unique_strings;
-            while(e != NULL) { if (e->str == entry->value.str) break;  e = e->next; idx++; }
-	    emit_string_arg(out, idx, n_arg);
-            break;
-        case PT_FUN:
-            if (entry->value.num < NUM_BUILTINS) { // operators directly supported by CPU: '+', '-', '&', '|', '^'
-                emit_builtin(out, cmdnames[entry->value.num], n_arg, n_args);
-	    } else if (entry->value.num < NUM_COMMANDS) { // other operators whose cmdnames are translated to different primitive names ('~' ... '$')
-                emit_func_arg(out, cmdnames[entry->value.num], primitive_names[entry->value.num], n_arg, n_args);
-            } else { // other primitives: "funcall", "printnum", "print", ...
-                emit_func_arg(out, primitive_names[entry->value.num], primitive_names[entry->value.num], n_arg, n_args);
-            }
-            break;
-//        case PT_REF:
-//            break;
-        case PT_OPN:
-            if (entry->value.num == '(' && n_arg <= NUM_ARG_REGS) { // other subexpr results are already placed on stack
-                return emit_subexpr(out, stack, from, n_arg, stashbase);
-            } else { // '{': block
-                return emit_block(out, stack, from, n_arg);
-            }
-	    break;
-        case PT_CLS:
-            // Expecting caller to halt expression at CLS
-            // without calling us (even in case of ';')
-            printf("Error: bracket mismatch\n");
-            break;
-    }
-
-    return from;
-}
 
 void emit_save_retval(FILE * out, int n_arg) {
     if (n_arg <= NUM_ARG_REGS) {

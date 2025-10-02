@@ -7,9 +7,9 @@
 #include "parsta.h"
 
 char * primitive_names[] = {
-    "+", "-", "&", "|", "^", "~", "*", "/", "\%", "=", "<", ">", "<=", ">=", "!", "&&", "||", "$", "if", "loop", "funcall", "printnum", "print", "define", "get", "set", "args", "return"
-#ifdef LEXICAL_SCOPING
-    , "bind"
+    "+", "-", "&", "|", "^", "~", "*", "/", "\%", "=", "<", ">", "<=", ">=", "!", "&&", "||", "$", "if", "loop", "funcall", "printnum", "print", "define", "get", "set", "args", "return", "bind"
+#ifdef AUTO_BIND
+    , "autobind"
 #endif
 };
 int num_primitives = (sizeof(primitive_names) / sizeof(char *));
@@ -17,7 +17,7 @@ int num_primitives = (sizeof(primitive_names) / sizeof(char *));
 #define PRIM_DEFINE 23
 #define PRIM_GET 24
 #define PRIM_ARGS 26
-#define PRIM_BIND 28
+#define PRIM_AUTOBIND 29
 
 ParseStackEntry * push (ParseStack * stack, ParseStackType type, int value) {
     if (stack->length >= stack->size) { printf ("Parse stack overflow\n"); exit(-1); }
@@ -100,19 +100,19 @@ void parse (FILE * in, FILE * out, ParseStack * stack) {
             }
             push(stack, PT_INT, numval);
         } else if (ch == '{' || ch == '(') {
-#ifdef LEXICAL_SCOPING
+#if defined(LEXICAL_SCOPING) && defined(AUTO_BIND)
             if (ch == '{' && !at_function_position(stack)) {
                 // add 'bind' call. This is effectively similar to (define "(closure)" { ... } )
                 // notice we don't need to add 'bind' for a direct invocation
                 push(stack, PT_OPN, '(');
-                push(stack, PT_FUN, PRIM_BIND);
+                push(stack, PT_FUN, PRIM_AUTOBIND);
             }
 #endif
             push(stack, PT_OPN, ch);
             ch = fgetc(in);
         } else if (ch == '}' || ch == ')' || ch == ';') {
             push(stack, PT_CLS, ch);
-#ifdef LEXICAL_SCOPING
+#if defined(LEXICAL_SCOPING) && defined(AUTO_BIND)
             if (ch == '}') {
                 // closing bracket to 'bind' call
                 push(stack, PT_CLS, ')');
@@ -161,7 +161,7 @@ void parse (FILE * in, FILE * out, ParseStack * stack) {
             } else {
                 // This is a as a built-in / primitive function
 
-#ifdef LEXICAL_SCOPING
+#if defined(LEXICAL_SCOPING) && defined(AUTO_BIND)
                 if (at_function_position(stack)) {
                     // Don't wrap a primitive we immediately execute
                     push(stack, PT_FUN, idx);
@@ -169,7 +169,7 @@ void parse (FILE * in, FILE * out, ParseStack * stack) {
                     // Do wrap a primitive we pass as an argument,
                     // so that it can eventually be dereferenced like any other function
                     push(stack, PT_OPN, '(');
-                    push(stack, PT_FUN, PRIM_BIND);
+                    push(stack, PT_FUN, PRIM_AUTOBIND);
                     push(stack, PT_FUN, idx);
                     push(stack, PT_CLS, ')');
                 }

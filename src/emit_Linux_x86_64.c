@@ -112,8 +112,12 @@ void emit_start(FILE * out) {
     fprintf(out, "    cmp $0, %s\n", regnames[1]);
     fprintf(out, "    jz 0f\n");
 #ifdef LEXICAL_SCOPING
+#ifdef AUTO_BIND
     fprintf(out, "    mov %s, %s      /* pass original closure in %s */\n", regnames[2], CLOSURE_REG, CLOSURE_REG);
     fprintf(out, "    mov 8(%s), %s      /* dereference argless closure */\n", regnames[2], regnames[2]);
+#else
+    fprintf(out, "    mov $0, %s      /* indicate no closure; common block */\n", CLOSURE_REG);
+#endif
 #endif
     fprintf(out, "    jmp *%s           /* let target return to caller    */\n", regnames[2]);
     fprintf(out, "    ret\n");
@@ -121,8 +125,12 @@ void emit_start(FILE * out) {
     fprintf(out, "    cmp $0, %s        /* have else block?              */\n", regnames[3]);
     fprintf(out, "    jz 0f\n");
 #ifdef LEXICAL_SCOPING
+#ifdef AUTO_BIND
     fprintf(out, "    mov %s, %s      /* pass original closure in %s */\n", regnames[3], CLOSURE_REG, CLOSURE_REG);
     fprintf(out, "    mov 8(%s), %s      /* dereference argless closure */\n", regnames[3], regnames[3]);
+#else
+    fprintf(out, "    mov $0, %s      /* indicate no closure; common block */\n", CLOSURE_REG);
+#endif
 #endif
     fprintf(out, "    jmp *%s           /* let target return to caller    */\n", regnames[3]);
     fprintf(out, "0:\n");
@@ -131,9 +139,14 @@ void emit_start(FILE * out) {
     fprintf(out, "    push %s         /* save block arg to stack */\n", regnames[1]);
     fprintf(out, "0:\n");
 #ifdef LEXICAL_SCOPING
+#ifdef AUTO_BIND
     fprintf(out, "    mov 0(%%rsp), %s      /* pass original closure in %s */\n", CLOSURE_REG, CLOSURE_REG);
     fprintf(out, "    mov 8(%s), %s      /* dereference argless closure */\n", CLOSURE_REG, regnames[1]);
     fprintf(out, "    call *%s\n", regnames[1]);
+#else
+    fprintf(out, "    mov $0, %s      /* indicate no closure; common block */\n", CLOSURE_REG);
+    fprintf(out, "    call *0(%%rsp)\n");
+#endif
 #else
     fprintf(out, "    call *0(%%rsp)\n");
 #endif
@@ -173,13 +186,6 @@ void emit_start(FILE * out) {
     fprintf(out, "    call init\n");
 }
 
-int unique_string_idx(ParseStackEntry * entry) {
-    int idx = 0;
-    StringEntry * e = unique_strings;
-    while(e != NULL) { if (e->str == entry->value.str) break;  e = e->next; idx++; }
-    return idx;
-}
-
 void emit_int_arg(FILE * out, int num, int n_arg) {
     fprintf(out, "    mov $%d, %s\n", num, regnames[n_arg]);
 }
@@ -188,7 +194,7 @@ void emit_string_arg(FILE * out, int idx, int n_arg) {
     fprintf(out, "    lea str%d(%%rip), %s\n", idx, regnames[n_arg]);
 }
 
-void emit_builtin(FILE * out, char * cmdname, int n_arg, int n_args) {
+void emit_builtin(FILE * out, const char * cmdname, int n_arg, int n_args) {
     if (n_arg == 0) { // that's the function position; in any other position, function == common argument
         fprintf(out, "    mov %s, %%rax      /* move to return reg             */\n", regnames[1]);
         for (int i=2; i<n_args; i++) {
@@ -199,7 +205,7 @@ void emit_builtin(FILE * out, char * cmdname, int n_arg, int n_args) {
     }
 }
 
-void emit_func_arg(FILE * out, char * cname, char * pname, int n_arg, int n_args) {
+void emit_func_arg(FILE * out, const char * cname, const char * pname, int n_arg, int n_args) {
     if (n_args < num_regnames) fprintf(out, "    mov $0, %s /* mark end of potential varargs */\n", regnames[n_args]);
     fprintf(out, "    lea %s(%%rip), %s\n", cname, regnames[n_arg]); // That's for function pointers
     if (n_arg == 0) { // that's the function position; in any other position, function == common argument
@@ -237,11 +243,17 @@ int emit_block(FILE * out, ParseStack * stack, int from, int n_arg) {
     fprintf(out, "    push %%rax\n");
 
 #ifdef LEXICAL_SCOPING
+    // A one block should be always called either as a closure (= function) or plain (= block).
+    // To detect the correct situation at emit, we need to know if the block is in a `bind` call.
+    // Instead, we make the caller set the closure arg to zero when called as a plain block.
+    fprintf(out, "    cmp $0, %s  /* called from closure? */\n", CLOSURE_REG);
+    fprintf(out, "    jz  0f  /* if not, then don't setup func scope */\n");
     // Setup parent pointer
     fprintf(out, "    movq $0, 0(%%rax)  /* setup parent pointer; name = nil */\n");
     fprintf(out, "    mov %s, 8(%%rax)   /* value = pos of closure */\n", CLOSURE_REG);
     fprintf(out, "    add $16, %%rax       /* top_variables++                */\n");
     fprintf(out, "    mov %%rax, top_variables(%%rip) /* and save */\n");
+    fprintf(out, "0:                     /* start of block code      */\n");
 #endif
 
     int n_args2 = num_args(stack, from+1); // = -1 if no 'args'
@@ -265,44 +277,6 @@ int emit_block(FILE * out, ParseStack * stack, int from, int n_arg) {
     fprintf(out, "%d:\n", block_depth);
 
     block_depth--;
-    return from;
-}
-
-// TODO move this function to emit.c; see first initiative in arm7 port
-int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, int * stashbase) {
-    ParseStackEntry * entry = &(stack->entries[from]);
-    switch(entry->type) {
-        case PT_INT:
-            emit_int_arg(out, entry->value.num, n_arg);
-            break;
-        case PT_STR:
-	    emit_string_arg(out, unique_string_idx(entry), n_arg);
-            break;
-        case PT_FUN:
-            if (entry->value.num < NUM_BUILTINS) { // Functions for which the CPU have their own operator: '+', '-', '&', '|', '^'
-                emit_builtin(out, cmdnames[entry->value.num], n_arg, n_args);
-	    } else if (entry->value.num < NUM_COMMANDS) { // Commands that have a different C primitive name
-                emit_func_arg(out, cmdnames[entry->value.num], primitive_names[entry->value.num], n_arg, n_args);
-	    } else {
-                // default: // "funcall", "printnum", "print", ...
-                emit_func_arg(out, primitive_names[entry->value.num], primitive_names[entry->value.num], n_arg, n_args);
-            }
-            break;
-//        case PT_REF:
-//            break;
-        case PT_OPN:
-            if (entry->value.num == '(') {
-                return emit_subexpr(out, stack, from, n_arg, stashbase);
-            } else {
-                return emit_block(out, stack, from, n_arg);
-            }
-        case PT_CLS:
-            // Expecting caller to halt expression at CLS
-            // without calling us (even in case of ';')
-            printf("Error: bracket mismatch\n");
-            break;
-    }
-
     return from;
 }
 

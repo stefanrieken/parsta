@@ -8,11 +8,15 @@
  * Another small platform difference is that C functions are prepended with an underscore.
  */
 //char * cmdnames[] = { "add", "sub", "mul", "div", "remainder", "equals"};
-char * cmdnames[] = { "add", "sub", "and", "orr", "eor", "not", "mul", "udiv", "remainder", "equals", "lt", "gt", "lte", "gte", "lnot", "land", "lor", "_dollar"};
+const char * cmdnames[] = { "add", "sub", "and", "orr", "eor", "not", "mul", "udiv", "remainder", "equals", "lt", "gt", "lte", "gte", "lnot", "land", "lor", "dollar"};
 char * regnames[] = { "x8", "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"} ; // NOTE: first reg in this list is for function pointer (if needed)
 //char * retnames[] = { "x9", "x10", "x11", "x12", "x13", "x14", "x15" } ; // these are all caller saved and at our disposal on aarch64; but retnames must be callee saved
 char * retnames[] = { "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26" } ; // these are callee saved, so we use these for stashing return values
 
+
+const int NUM_ARG_REGS = 7;
+const int NUM_BUILTINS = 5; // Number of CPU-native binary operators in 'cmdnames'
+const int NUM_COMMANDS = sizeof(cmdnames) / sizeof(char *); // Total number of commands with translations to primitive names in 'cmdnames'
 int num_regnames = sizeof(regnames) / sizeof(char *);
 int num_retnames = sizeof(retnames) / sizeof(char *);
 
@@ -195,144 +199,101 @@ void emit_start(FILE * out) {
     fprintf(out, "    bl _init\n");
 }
 
-int emit_entry(FILE * out, ParseStack * stack, int from, int n_arg, int n_args, int * stashbase) {
-    ParseStackEntry * entry = &(stack->entries[from]);
-    int idx;
-    switch(entry->type) {
-        case PT_INT:
-            fprintf(out, "    mov %s, %d\n", regnames[n_arg], entry->value.num);
-            break;
-        case PT_STR:
-            idx = 0;
-            StringEntry * e = unique_strings;
-            while(e != NULL) { if (e->str == entry->value.str) break;  e = e->next; idx++; }
-            fprintf(out, "    adr %s, str%d\n", regnames[n_arg], idx);
-            break;
-        case PT_FUN:
-            switch(entry->value.num) {
-                case 0: // '+'; all these functions have their own operator
-                case 1: // '-'
-                case 2: // '&'
-                case 3: // '|'
-                case 4: // '^'
-                    if (n_arg == 0) {
-                        // if function is invoked directly, use processor's math operations
-                        for (int i=2; i<n_args; i++) {
-                            fprintf (out, "    %s x0, x0, %s      /* %s argument # %d               */ \n", cmdnames[entry->value.num], regnames[i], cmdnames[entry->value.num], i);
-                        }
-                    } else {
-                        // if this is a function pointer argument, point to a real function (which by the way takes at most two args)
-                        fprintf (out, "    adr %s, %s\n", regnames[n_arg], cmdnames[entry->value.num]);
-                    }
-                    break;
-                case 5: // '~'
-                case 6: // '*'; apart from the function call we presently make, this operator requires a different expression form from '+' etc. on x86
-                case 7: // '/'
-                case 8: // '%'
-                case 9: // '='
-                case 10: // '<'
-                case 11: // '>'
-                case 12: // '<='
-                case 13: // '>='
-                case 14: // '!'
-                case 15: // '&&'
-                case 16: // '||'
-                case 17: // '$'
-                    if (n_args < num_regnames) fprintf(out, "    mov %s, #0 /* mark end of potential varargs */\n", regnames[n_args]);
-                    if (n_arg == 0) {
-                        // if function is invoked directly, call it
-                        fprintf(out, "    bl %s            /* call '%s'          */\n", cmdnames[entry->value.num], primitive_names[entry->value.num]);
-                    } else {
-                        // if this is a function pointer argument, just supply the pointer
-                        fprintf (out, "    adr %s, %s\n", regnames[n_arg], cmdnames[entry->value.num]);
-                    }
-                    break;
-                default: // "funcall", "printnum", "print", ...
-                    if (n_args < num_regnames) fprintf(out, "    mov %s, #0 /* mark end of potential varargs */\n", regnames[n_args]);
-                    if (n_arg == 0) { // that's the function position; in any other position, function == common argument
-                        fprintf (out, "    bl _%s\n", primitive_names[entry->value.num]);
-                    } else {
-                        // Apparently we're only pointing to the function
-                        fprintf (out, "    adr %s, _%s\n", regnames[n_arg], primitive_names[entry->value.num]); // That's for function pointers
-                    }
-                    break;
-            }
-            break;
-//        case PT_REF:
-//            break;
-        case PT_OPN:
-            if (entry->value.num == '(') {
-                if (*stashbase != stashptr) // Last subexpr was not stashed
-                    fprintf(out, "    mov %s, %s          /* unstash return value           */\n", regnames[n_arg], retnames[(*stashbase)++]);
-                // As we generate subexprs in written order to facilitate stash / unstash,
-                // we cannot immediately invoke any function subexpr as we meet it; leave this with our caller
-                //if (n_arg == 0) { // expression at function position!
-                //    fprintf(out, "    bl %s%s\n", regnames[0]);
-                //}
+void emit_int_arg(FILE * out, int num, int n_arg) {
+    fprintf(out, "    mov %s, %d\n", regnames[n_arg], entry->value.num);
+}
+
+void emit_string_arg(FILE * out, int idx, int n_arg) {
+    fprintf(out, "    adr %s, str%d\n", regnames[n_arg], idx);
+}
+
+void emit_builtin(FILE * out, char * cmdname, int n_arg, int n_args) {
+    if (n_arg == 0) {
+        // if function is invoked directly, call it
+        for (int i=2; i<n_args; i++) {
+            fprintf (out, "    %s x0, x0, %s      /* %s argument # %d               */ \n", cmdnames[entry->value.num], regnames[i], cmdnames[entry->value.num], i);
+        }
+    } else {
+        // if this is a function pointer argument, point to a real function (which by the way takes at most two args)
+        fprintf (out, "    adr %s, %s\n", regnames[n_arg], cmdnames[entry->value.num]);
+    }
+}
+
+void emit_func_arg(FILE * out, char * cname, char * pname, int n_arg, int n_args) {
+    if (n_arg == 0) { // that's the function position; in any other position, function == common argument
+        if (n_args < num_regnames) fprintf(out, "    mov %s, #0 /* mark end of potential varargs */\n", regnames[n_args]);
+        fprintf (out, "    bl _%s\n", primitive_names[entry->value.num]);
+    } else {
+        // if this is a function pointer argument, just supply the pointer
+        fprintf (out, "    adr %s, _%s\n", regnames[n_arg], primitive_names[entry->value.num]); // That's for function pointers
+    }
+}
+
+int emit_subexpr(FILE * out, ParseStack * stack, int from, int n_arg, int * stashbase) {
+   if (*stashbase != stashptr) // Last subexpr was not stashed
+        fprintf(out, "    mov %s, %s          /* unstash return value           */\n", regnames[n_arg], retnames[(*stashbase)++]);
+    // As we generate subexprs in written order to facilitate stash / unstash,
+    // we cannot immediately invoke any function subexpr as we meet it; leave this with our caller
+    //if (n_arg == 0) { // expression at function position!
+    //    fprintf(out, "    bl %s%s\n", regnames[0]);
+    //}
 
 #ifdef LEXICAL_SCOPING
-                if (n_arg == 0) { // subexpr at function position; assume it is "get" or at least yields a closure; resolve closure
-                    fprintf(out, "    mov %s, %s      /* pass original closure in %s */\n", CLOSURE_REG, regnames[0], CLOSURE_REG);
-                    fprintf(out, "    ldr %s, [%s, #8]   /* dereference function closure */\n", regnames[0], regnames[0]);
-                }
-#endif
-            // Skip sub-expression since it was already written
-                return skip_until_close(stack, from)-1;
-            } else {
-                block_depth++;
-
-                fprintf(out, "    adr %s, 0f          /* load start of block as arg     */\n", regnames[n_arg]);
-                fprintf(out, "    b %df                /* jump over the block            */\n", block_depth);
-                fprintf(out, ".align 4\n");
-                fprintf(out, "0:                      /* start of block                 */\n");
-                fprintf(out, "    stp fp, lr, [sp, #-0x10]!       /* save fp, lr for bl */\n");
-                fprintf(out, "    adrp x7, _top_variables@PAGE\n"); // TODO hijacking an arg register here.
-                fprintf(out, "    add x7, x7, _top_variables@PAGEOFF\n"); // TODO hijacking an arg register here.
-                fprintf(out, "    ldr x8, [x7]\n");
-                fprintf(out, "    str x8, [sp, #-16]!\n");
-
-    #ifdef LEXICAL_SCOPING
-                // Setup parent pointer
-                fprintf(out, "    str wzr, [x8]  /* setup parent pointer; name = nil */\n");
-                fprintf(out, "    str %s, [x8, #8]   /* value = pos of closure */\n", CLOSURE_REG);
-                fprintf(out, "    add x8, x8, #16       /* top_variables++                */\n");
-                fprintf(out, "    str x8, [x7]      /* and save */\n");
-#endif
-
-                int n_args2 = num_args(stack, from+1); // = -1 if no 'args'
-                if (n_args2 != -1) {
-                    for (int i=n_args2-1;i>=0;i--) {
-                        fprintf(out, "    str %s, [sp, #-16]!     /* store arg %d for 'args'       */\n", regnames[i+1], i+1);
-                    }
-                    if (n_args2 < num_regnames-1) {
-                        fprintf(out, "    mov %s, #0     /* mark end of varargs to 'args' */\n", regnames[n_args2+1]);
-                    }
-                }
-
-                from = emit_code(out, stack, from+1, '}')-1;
-
-                if (n_args2 > 0) {
-                    fprintf(out, "    add sp, sp, #%d     /* remove args from stack */\n", n_args2*16);
-                }
-                fprintf(out, "    ldr x8, [sp], #16  /* restore top of variables to before call */\n");
-                fprintf(out, "    adrp x7, _top_variables@PAGE\n"); // TODO hijacking an arg register here.
-                fprintf(out, "    add x7, x7, _top_variables@PAGEOFF\n"); // TODO hijacking an arg register here.
-                fprintf(out, "    str x8, [x7]\n");
-                fprintf(out, "    ldp fp, lr, [sp], #0x10    /* restore fp, lr after bl */\n");
-                fprintf(out, "    ret                 /* return from block              */\n");
-                fprintf(out, "%d:\n", block_depth);
-
-                block_depth--;
-                return from;
-            }
-        case PT_CLS:
-            // Expecting caller to halt expression at CLS
-            // without calling us (even in case of ';')
-            printf("Error: bracket mismatch\n");
-            break;
+    if (n_arg == 0) { // subexpr at function position; assume it is "get" or at least yields a closure; resolve closure
+        fprintf(out, "    mov %s, %s      /* pass original closure in %s */\n", CLOSURE_REG, regnames[0], CLOSURE_REG);
+        fprintf(out, "    ldr %s, [%s, #8]   /* dereference function closure */\n", regnames[0], regnames[0]);
     }
+#endif
+    // Skip sub-expression since it was already written
+    return skip_until_close(stack, from)-1;
+}
 
-    return from;
+int emit_block(FILE * out, ParseStack * stack, int from, int n_arg) {
+        block_depth++;
+
+        fprintf(out, "    adr %s, 0f          /* load start of block as arg     */\n", regnames[n_arg]);
+        fprintf(out, "    b %df                /* jump over the block            */\n", block_depth);
+        fprintf(out, ".align 4\n");
+        fprintf(out, "0:                      /* start of block                 */\n");
+        fprintf(out, "    stp fp, lr, [sp, #-0x10]!       /* save fp, lr for bl */\n");
+        fprintf(out, "    adrp x7, _top_variables@PAGE\n"); // TODO hijacking an arg register here.
+        fprintf(out, "    add x7, x7, _top_variables@PAGEOFF\n"); // TODO hijacking an arg register here.
+        fprintf(out, "    ldr x8, [x7]\n");
+        fprintf(out, "    str x8, [sp, #-16]!\n");
+
+#ifdef LEXICAL_SCOPING
+        // Setup parent pointer
+        fprintf(out, "    str wzr, [x8]  /* setup parent pointer; name = nil */\n");
+        fprintf(out, "    str %s, [x8, #8]   /* value = pos of closure */\n", CLOSURE_REG);
+        fprintf(out, "    add x8, x8, #16       /* top_variables++                */\n");
+        fprintf(out, "    str x8, [x7]      /* and save */\n");
+#endif
+
+        int n_args2 = num_args(stack, from+1); // = -1 if no 'args'
+        if (n_args2 != -1) {
+            for (int i=n_args2-1;i>=0;i--) {
+                fprintf(out, "    str %s, [sp, #-16]!     /* store arg %d for 'args'       */\n", regnames[i+1], i+1);
+            }
+            if (n_args2 < num_regnames-1) {
+                fprintf(out, "    mov %s, #0     /* mark end of varargs to 'args' */\n", regnames[n_args2+1]);
+            }
+        }
+
+        from = emit_code(out, stack, from+1, '}')-1;
+
+        if (n_args2 > 0) {
+            fprintf(out, "    add sp, sp, #%d     /* remove args from stack */\n", n_args2*16);
+        }
+        fprintf(out, "    ldr x8, [sp], #16  /* restore top of variables to before call */\n");
+        fprintf(out, "    adrp x7, _top_variables@PAGE\n"); // TODO hijacking an arg register here.
+        fprintf(out, "    add x7, x7, _top_variables@PAGEOFF\n"); // TODO hijacking an arg register here.
+        fprintf(out, "    str x8, [x7]\n");
+        fprintf(out, "    ldp fp, lr, [sp], #0x10    /* restore fp, lr after bl */\n");
+        fprintf(out, "    ret                 /* return from block              */\n");
+        fprintf(out, "%d:\n", block_depth);
+
+        block_depth--;
+        return from;
 }
 
 void emit_save_retval(FILE * out) {

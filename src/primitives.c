@@ -105,6 +105,13 @@ intptr_t set(char * name, intptr_t val) {
 // As in regular pasta, we 'abuse' the var stack to store the reference to
 // an anonymous function at its point of definition, which precisely marks its lexical scope.
 Variable * bind(void * val) {
+#ifdef AUTO_BIND
+// This is dirty, but autobind as a whole is transitional.
+    return val;
+}
+
+Variable * autobind(void * val) {
+#endif
     Variable * var = top_variables++;
     // printf("Binding a block: %p to %p\n", var, val);
     var->name = CLOSURE;
@@ -123,6 +130,11 @@ intptr_t funcall(GenericFunction func, char * a, char * b, char * c, char * d, c
     return result;
 }
 */
+#else
+// In case of dynamic scoping, make bind a no-op
+Variable * bind(void * val) {
+    return val;
+}
 #endif
 
 char buffer[25];
