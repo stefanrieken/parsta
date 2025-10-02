@@ -141,16 +141,24 @@ void emit_start(FILE * out) {
     fprintf(out, "    cmp %s, #0\n", regnames[1]);
     fprintf(out, "    beq 0f\n");
 #ifdef LEXICAL_SCOPING
+#ifdef AUTO_BIND
     fprintf(out, "    mov %s, %s      /* pass original closure in %s */\n", CLOSURE_REG, regnames[2], CLOSURE_REG);
     fprintf(out, "    ldr %s, [%s, #4]   /* dereference function closure */\n", regnames[2], regnames[2]);
+#else
+    fprintf(out, "    mov %s, #0      /* indicate no closure; common block */\n", CLOSURE_REG);
+#endif
 #endif
     fprintf(out, "    mov pc, %s          /* let target return to caller    */\n", regnames[2]);
     fprintf(out, "0:\n");
     fprintf(out, "    cmp %s, #0     /* have else block? */\n", regnames[3]);
     fprintf(out, "    beq 0f\n");
 #ifdef LEXICAL_SCOPING
+#ifdef AUTO_BIND
     fprintf(out, "    mov %s, %s      /* pass original closure in %s */\n", CLOSURE_REG, regnames[3], CLOSURE_REG);
     fprintf(out, "    ldr %s, [%s, #4]   /* dereference function closure */\n", regnames[3], regnames[3]);
+#else
+    fprintf(out, "    mov %s, #0      /* indicate no closure; common block */\n", CLOSURE_REG);
+#endif
 #endif
     fprintf(out, "    mov pc, %s          /* let target return to caller    */\n", regnames[3]);
     fprintf(out, "0:\n");
@@ -162,9 +170,15 @@ void emit_start(FILE * out) {
     fprintf(out, "    push { %s }        /* save block arg to stack */\n", regnames[1]);
     fprintf(out, "0:\n");
 #ifdef LEXICAL_SCOPING
+#ifdef AUTO_BIND
     fprintf(out, "    ldr %s, [sp]      /* pass original closure in %s */\n", CLOSURE_REG, CLOSURE_REG);
     fprintf(out, "    ldr %s, [%s, #4]   /* dereference function closure */\n", regnames[1], CLOSURE_REG);
-    fprintf(out, "    blx %s          /* call block    */\n", regnames[1]);
+    fprintf(out, "    blx %s          /* call function    */\n", regnames[1]);
+#else
+    fprintf(out, "    mov %s, #0      /* indicate no closure; common block */\n", CLOSURE_REG);
+    fprintf(out, "    ldr %s, [sp]     /* recall block arg */\n", regnames[1]);
+    fprintf(out, "    blx %s           /* call block    */\n", regnames[1]);
+#endif
 #else
     fprintf(out, "    ldr %s, [sp]     /* recall block arg */\n", regnames[1]);
     fprintf(out, "    blx %s           /* call block    */\n", regnames[1]);
@@ -295,6 +309,8 @@ int emit_block(FILE * out, ParseStack * stack, int from, int n_arg) {
     fprintf(out, "    push { r6 }\n");
 
 #ifdef LEXICAL_SCOPING
+    fprintf(out, "    cmp %s, #0      /* Are we called as a function? */\n", CLOSURE_REG); 
+    fprintf(out, "    beq 0f          /* If not, don't setup scope */\n"); 
     // Setup parent pointer
     fprintf(out, "    mov r5, #0\n"); 
     fprintf(out, "    str r5, [r6]       /* setup parent pointer; name = nil */\n");
@@ -302,6 +318,7 @@ int emit_block(FILE * out, ParseStack * stack, int from, int n_arg) {
     fprintf(out, "    add r6, r6, #8       /* top_variables++                */\n");
     fprintf(out, "    ldr r5, =top_variables\n");
     fprintf(out, "    str r6, [r5]      /* and save */\n");
+    fprintf(out, "0:                      /* start of actual block code           */\n");
 #endif
 
     int n_args2 = num_args(stack, from+1); // = -1 if no 'args'
